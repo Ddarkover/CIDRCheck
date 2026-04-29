@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CIDRCheck — Проверка IP в белом списке РФ</title>
+  <meta name="description" content="Проверьте, входит ли IP-адрес или домен в белый список (whitelist) российских интернет-ограничений. Анализ CIDR, информация об ISP, ASN, геолокация." />
+  <meta name="keywords" content="IP whitelist, CIDR, Россия, белый список, проверка IP, блокировки" />
+  <meta property="og:title" content="CIDRCheck — IP Whitelist Checker" />
+  <meta property="og:description" content="Проверка IP-адресов по белому списку CIDR (Россия)" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⬡</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="noise-overlay"></div>
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-text">CIDR<span class="accent">Check</span></span>
+      </div>
+      <div class="header-actions">
+        <div class="status-badge" id="listStatus">
+          <span class="dot loading"></span>
+          <span class="status-text">Загрузка списка...</span>
+        </div>
+        <button class="theme-toggle" id="themeToggle" aria-label="Переключить тему">◐</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="hero">
+      <div class="hero-label">Белые списки · Россия · IPv4 · ~30 000 CIDR</div>
+      <h1 class="hero-title">
+        Проверка<br/>
+        <span class="hero-accent">IP / Домена</span><br/>
+        в whitelist
+      </h1>
+      <p class="hero-sub">Анализ CIDR-диапазонов российских мобильных ограничений.<br/>Без backend — всё в браузере.</p>
+    </section>
+
+    <div class="checker-card">
+      <div class="input-row">
+        <div class="input-wrapper">
+          <span class="input-prefix" id="inputPrefix">⌯</span>
+          <input
+            type="text"
+            id="queryInput"
+            class="main-input"
+            placeholder="example.com или 192.168.1.1"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <span class="input-type-badge" id="inputTypeBadge"></span>
+        </div>
+        <button class="check-btn" id="checkBtn">
+          <span class="btn-text">Проверить</span>
+          <span class="btn-arrow">→</span>
+        </button>
+      </div>
+      <div class="input-hints">
+        <span class="hints-label">Примеры:</span>
+        <button class="hint-tag" onclick="setExample('ya.ru')">ya.ru</button>
+        <button class="hint-tag" onclick="setExample('vk.com')">vk.com</button>
+        <button class="hint-tag" onclick="setExample('max.ru')">max.ru</button>
+        <button class="hint-tag" onclick="setExample('google.com')">google.com</button>
+        <button class="hint-tag" onclick="setExample('youtube.com')">youtube.com</button>
+      </div>
+    </div>
+
+    <!-- Loader -->
+    <div class="loader-container" id="loaderContainer" hidden>
+      <div class="loader-steps">
+        <div class="step" id="step1"><span class="step-dot"></span><span class="step-text">Инициализация</span></div>
+        <div class="step-line"></div>
+        <div class="step" id="step2"><span class="step-dot"></span><span class="step-text">Резолвинг DNS</span></div>
+        <div class="step-line"></div>
+        <div class="step" id="step3"><span class="step-dot"></span><span class="step-text">Проверка CIDR</span></div>
+        <div class="step-line"></div>
+        <div class="step" id="step4"><span class="step-dot"></span><span class="step-text">Данные IP</span></div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div class="error-card" id="errorCard" hidden>
+      <div class="error-icon">⚠</div>
+      <div class="error-content">
+        <div class="error-title">Ошибка</div>
+        <div class="error-msg" id="errorMsg"></div>
+      </div>
+      <button class="error-close" onclick="hideError()">✕</button>
+    </div>
+
+    <!-- Results -->
+    <div class="results" id="results" hidden>
+
+      <div class="verdict-card" id="verdictCard">
+        <div class="verdict-left">
+          <div class="verdict-icon" id="verdictIcon"></div>
+          <div class="verdict-info">
+            <div class="verdict-query" id="verdictQuery"></div>
+            <div class="verdict-ip" id="verdictIp"></div>
+          </div>
+        </div>
+        <div class="verdict-right">
+          <div class="verdict-status" id="verdictStatus"></div>
+          <div class="verdict-cidr" id="verdictCidr"></div>
+        </div>
+      </div>
+
+      <div class="details-grid">
+        <div class="info-card" id="ipInfoCard">
+          <div class="card-header"><span class="card-icon">◈</span><span class="card-title">Информация об IP</span></div>
+          <div class="card-body" id="ipInfoBody"><div class="info-skeleton"></div></div>
+        </div>
+        <div class="info-card" id="geoCard">
+          <div class="card-header"><span class="card-icon">◉</span><span class="card-title">Геолокация</span></div>
+          <div class="card-body" id="geoBody"><div class="info-skeleton"></div></div>
+        </div>
+        <div class="info-card wide-card" id="networkCard">
+          <div class="card-header"><span class="card-icon">◫</span><span class="card-title">Сеть и маршрутизация</span></div>
+          <div class="card-body" id="networkBody"><div class="info-skeleton"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-bar" id="statsBar" hidden>
+      <div class="stat-item"><span class="stat-label">Записей</span><span class="stat-val" id="statEntries">—</span></div>
+      <div class="stat-sep">·</div>
+      <div class="stat-item"><span class="stat-label">Размер</span><span class="stat-val" id="statSize">—</span></div>
+      <div class="stat-sep">·</div>
+      <div class="stat-item"><span class="stat-label">Источник</span><span class="stat-val"><a href="https://github.com/hxehex/russia-mobile-internet-whitelist" target="_blank" rel="noopener">hxehex/russia-mobile-internet-whitelist ↗</a></span></div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <span>CIDRCheck</span>
+    <span class="footer-sep">·</span>
+    <span>100% frontend, без backend</span>
+    <span class="footer-sep">·</span>
+    <span>GitHub Pages ready</span>
+    <span class="footer-sep">·</span>
+    <a href="https://github.com/Ddarkover/CIDRCheck" target="_blank" rel="noopener">GitHub репозиторий ↗</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
