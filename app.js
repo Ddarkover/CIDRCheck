@@ -3,14 +3,14 @@
  * Fully static frontend, GitHub Pages compatible
  */
 
+const WHITELIST_LOCAL_URL = 'data/cidrwhitelist.txt';
 const WHITELIST_URL = 'https://raw.githubusercontent.com/hxehex/russia-mobile-internet-whitelist/refs/heads/main/cidrwhitelist.txt';
 const WHITELIST_FALLBACK_URL = 'https://raw.githubusercontent.com/hxehex/russia-mobile-internet-whitelist/main/cidrwhitelist.txt';
 const DOH_URL = 'https://cloudflare-dns.com/dns-query';
 const IPINFO_PROVIDERS = [
+  { name: 'ipapi.is', url: (ip) => 'https://api.ipapi.is/?q=' + ip, parser: parseIpapiIs },
+  { name: 'iplocate.io', url: (ip) => 'https://www.iplocate.io/api/lookup/' + ip, parser: parseIplocate },
   { name: 'api.ip.sb', url: (ip) => 'https://api.ip.sb/geoip/' + ip, parser: parseIpSb },
-  { name: 'ipwhois.app', url: (ip) => 'https://ipwhois.app/json/' + ip, parser: parseIpWhois },
-  { name: 'ifconfig.co', url: (ip) => 'https://ifconfig.co/json?ip=' + ip, parser: parseIfconfig },
-  { name: 'ip-api.com', url: (ip) => 'http://ip-api.com/json/' + ip, parser: parseIpApi },
 ];
 
 let cidrList = [];
@@ -65,8 +65,22 @@ function toggleTheme() {
 async function loadWhitelist() {
   setStatus('loading', 'Загрузка списка...');
   try {
-    const res = await fetchWithTimeout(WHITELIST_URL, {}, 12000).catch(() => fetchWithTimeout(WHITELIST_FALLBACK_URL, {}, 12000));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const sources = [WHITELIST_LOCAL_URL, WHITELIST_URL, WHITELIST_FALLBACK_URL];
+    let res = null;
+    let lastErr = null;
+    for (const source of sources) {
+      try {
+        const candidate = await fetchWithTimeout(source, {}, 12000);
+        if (candidate.ok) {
+          res = candidate;
+          break;
+        }
+        lastErr = new Error('HTTP ' + candidate.status + ' from ' + source);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (!res) throw (lastErr || new Error('Не удалось загрузить whitelist из источников'));
     const text = await res.text();
     const bytes = new Blob([text]).size;
     parseCIDRList(text);
@@ -314,63 +328,50 @@ function parseIpSb(data) {
   };
 }
 
-function parseIpWhois(data) {
-  if (!data || data.success === false || !data.ip) return null;
+
+
+
+
+function parseIpapiIs(data) {
+  if (!data || !data.ip) return null;
+  var company = data.company || {};
+  var location = data.location || {};
   return {
     ip: data.ip,
-    isp: data.isp || data.org || null,
-    organization: data.org || null,
-    asn: data.asn,
-    country: data.country,
-    country_code: data.country_code,
-    region: data.region,
-    city: data.city,
-    timezone: data.timezone,
-    latitude: data.latitude,
-    longitude: data.longitude,
-    network: null,
-    version: data.type,
+    isp: company.name || (data.asn && data.asn.org) || null,
+    organization: company.name || (data.asn && data.asn.org) || null,
+    asn: data.asn && (data.asn.asn || data.asn.number || data.asn.org),
+    country: location.country || data.location_country || null,
+    country_code: location.country_code || null,
+    region: location.state || location.region || null,
+    city: location.city || null,
+    timezone: location.timezone || null,
+    latitude: location.latitude || null,
+    longitude: location.longitude || null,
+    network: data.company && data.company.network ? data.company.network : null,
+    version: data.is_ipv6 ? 'IPv6' : 'IPv4',
   };
 }
 
-function parseIfconfig(data) {
+function parseIplocate(data) {
   if (!data || !data.ip) return null;
   return {
     ip: data.ip,
-    isp: data.asn_org || null,
-    organization: data.asn_org || null,
-    asn: data.asn,
-    country: data.country,
-    country_code: data.country_iso,
-    region: null,
-    city: null,
-    timezone: data.time_zone,
-    latitude: data.latitude,
-    longitude: data.longitude,
-    network: null,
-    version: null,
-    hostname: data.hostname || null,
+    isp: (data.company && data.company.name) || (data.asn && data.asn.name) || data.org || data.isp || null,
+    organization: (data.company && data.company.name) || (data.asn && data.asn.name) || data.org || data.isp || null,
+    asn: data.asn && data.asn.asn ? data.asn.asn : (data.asn || null),
+    country: data.country || null,
+    country_code: data.country_code || null,
+    region: data.subdivision || data.region || null,
+    city: data.city || null,
+    timezone: data.time_zone || data.timezone || null,
+    latitude: data.latitude || null,
+    longitude: data.longitude || null,
+    network: (data.abuse && data.abuse.network) || data.network || null,
+    version: data.ip_version || null,
   };
 }
 
-function parseIpApi(data) {
-  if (!data || data.status !== 'success') return null;
-  return {
-    ip: data.query,
-    isp: data.isp || data.org || null,
-    organization: data.org || null,
-    asn: data.as,
-    country: data.country,
-    country_code: data.countryCode,
-    region: data.regionName,
-    city: data.city,
-    timezone: data.timezone,
-    latitude: data.lat,
-    longitude: data.lon,
-    network: null,
-    version: null,
-  };
-}
 
 function countryFlag(code) {
   if (!code || code.length !== 2) return '';
