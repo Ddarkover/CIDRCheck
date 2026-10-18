@@ -1,0 +1,56 @@
+name: Update CIDR whitelist cache
+
+on:
+  schedule:
+    - cron: '0 3 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-whitelist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download latest whitelist safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_URL="https://raw.githubusercontent.com/hxehex/russia-mobile-internet-whitelist/refs/heads/main/cidrwhitelist.txt"
+          TARGET_FILE="data/cidrwhitelist.txt"
+          TEMP_FILE="$(mktemp)"
+
+          mkdir -p data
+
+          if curl --fail --silent --show-error --location "$SOURCE_URL" --output "$TEMP_FILE"; then
+            if [ ! -s "$TEMP_FILE" ]; then
+              echo "Downloaded file is empty; keeping existing cached file."
+              exit 0
+            fi
+
+            if [ ! -f "$TARGET_FILE" ] || ! cmp -s "$TEMP_FILE" "$TARGET_FILE"; then
+              mv "$TEMP_FILE" "$TARGET_FILE"
+              echo "Whitelist cache updated."
+            else
+              echo "No changes in whitelist file."
+            fi
+          else
+            echo "Source file unavailable (deleted/moved/network issue). Keeping existing cached file."
+            exit 0
+          fi
+
+      - name: Commit changes if whitelist changed
+        run: |
+          if git diff --quiet -- data/cidrwhitelist.txt; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/cidrwhitelist.txt
+          git commit -m "chore(data): refresh cached CIDR whitelist"
+          git push
